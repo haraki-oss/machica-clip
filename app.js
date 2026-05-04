@@ -1,13 +1,21 @@
 // Machica Clip - Main Application Logic
+console.log('[clip] app.js loaded; window.supabase=', typeof window.supabase);
 
 // === Supabase Configuration ===
 const SUPABASE_URL = 'https://izpqclmzyiommzyovcuu.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_2srAPKaBOxzUZjtL92Nnug_Rp1ERO5s';
 
 // Supabaseクライアントの初期化 (CDN版)
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabaseClient;
+try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('[clip] supabase client initialized');
+} catch (e) {
+    console.error('[clip] supabase init failed:', e);
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('[clip] DOMContentLoaded');
     // === DOM Elements ===
     const views = {
         login: document.getElementById('view-login'),
@@ -49,13 +57,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // セッションの確認（ページ読み込み時）
     async function checkSession() {
-        const { data, error } = await supabaseClient.auth.getSession();
-        if (data.session) {
-            currentUser = data.session.user;
-            await loadUserData();
-        } else {
+        console.log('[clip] checkSession: start');
+        try {
+            const { data, error } = await supabaseClient.auth.getSession();
+            if (error) console.error('[clip] getSession error:', error);
+            console.log('[clip] checkSession: hasSession=', !!data?.session);
+            if (data && data.session) {
+                currentUser = data.session.user;
+                try {
+                    await loadUserData();
+                } catch (e) {
+                    console.error('[clip] loadUserData failed:', e);
+                }
+            } else {
+                currentUser = null;
+            }
+        } catch (e) {
+            console.error('[clip] checkSession failed:', e);
             currentUser = null;
         }
+        console.log('[clip] checkSession: calling handleRoute');
         handleRoute();
     }
 
@@ -87,6 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // === Routing Logic ===
     function handleRoute() {
+        console.log('[clip] handleRoute: hash=', window.location.hash, 'currentUser=', !!currentUser);
         try {
             _handleRouteInner();
         } catch (e) {
@@ -97,6 +119,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 Object.values(views).forEach(view => view && view.classList.add('hidden'));
                 showView(currentUser ? 'mypage' : 'login');
             } catch (_) { /* noop */ }
+        }
+        // 何らかの事情で全ビューが hidden のままだったら、最低限ログイン画面を出す
+        const anyVisible = Object.values(views).some(v => v && !v.classList.contains('hidden'));
+        if (!anyVisible) {
+            console.warn('[clip] No view visible after routing — forcing login');
+            if (views.login) views.login.classList.remove('hidden');
         }
     }
 
