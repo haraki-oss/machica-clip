@@ -221,13 +221,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             // サインイン（ログイン）を試みる
+            // supabase-js v2 が publishable key 利用時に Promise を resolve しない
+            // ことがあるので、SIGNED_IN イベントの到来 or 8s タイムアウトで race する。
             console.log('[clip] login: signInWithPassword start', email);
             const t0 = performance.now();
-            let { data, error } = await supabaseClient.auth.signInWithPassword({
-                email: email,
-                password: password,
+            const callPromise = supabaseClient.auth.signInWithPassword({ email, password });
+            const eventPromise = new Promise((resolve) => {
+                const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((ev, sess) => {
+                    if (ev === 'SIGNED_IN' && sess) {
+                        try { subscription?.unsubscribe(); } catch (_) {}
+                        resolve({ data: { user: sess.user, session: sess }, error: null });
+                    }
+                });
             });
-            console.log(`[clip] login: signInWithPassword done in ${(performance.now() - t0).toFixed(0)}ms; error=`, error?.message);
+            const timeoutPromise = new Promise((resolve) =>
+                setTimeout(() => resolve({ data: null, error: { message: 'login timeout' } }), 8000)
+            );
+            let { data, error } = await Promise.race([callPromise, eventPromise, timeoutPromise]);
+            console.log(`[clip] login: race resolved in ${(performance.now() - t0).toFixed(0)}ms; error=`, error?.message);
 
             if (error) {
                 console.error('ログイン失敗:', error.message);
@@ -304,11 +315,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentUser) return Promise.resolve();
         if (_listsFetchInFlight) return _listsFetchInFlight;
         _listsFetchInFlight = (async () => {
-            const { data, error } = await supabaseClient
+            // ハング対策の race
+            const queryP = supabaseClient
                 .from('lists')
                 .select('*')
                 .eq('user_id', currentUser.id)
                 .order('created_at', { ascending: false });
+            const timeoutP = new Promise((resolve) =>
+                setTimeout(() => resolve({ data: null, error: { message: 'lists query timeout' } }), 8000)
+            );
+            const { data, error } = await Promise.race([queryP, timeoutP]);
 
             if (error) {
                 console.error('リストの取得エラー:', error);
