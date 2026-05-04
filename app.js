@@ -4,8 +4,12 @@ console.log('[clip] app.js loaded; window.supabase=', typeof window.supabase);
 // === Supabase Configuration ===
 // Machica Collection と同じ Supabase プロジェクトを共有する。
 // `lists` / `collected_cards` テーブルは Collection 側にも作成済み。
+//
+// 注: 新形式の `sb_publishable_...` キーだと supabase-js v2 の auth 系
+// （getSession / signInWithPassword 等）が Promise を resolve しないハングが
+// 発生する。Legacy JWT anon key（eyJ...）に切り替えると解消する。
 const SUPABASE_URL = 'https://tzkzsucrgifrxnbxwdlq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_QT0rigwD5DuxH2SmLBaYVg_fq23Q1im';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6a3pzdWNyZ2lmcnhuYnh3ZGxxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMzgwMTYsImV4cCI6MjA5MjkxNDAxNn0.M0Ks6T8UEdulBZu-mmzGY6LtSHrGdgqvTRP1Z_DUnKQ';
 
 // Supabaseクライアントの初期化 (CDN版)
 let supabaseClient;
