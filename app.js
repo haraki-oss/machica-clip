@@ -91,10 +91,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Auth状態の変更を監視
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        console.log(`[clip] onAuthStateChange: ${event}, hasSession=${!!session}`);
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
             if (session) {
                 currentUser = session.user;
+                const t = performance.now();
                 await loadUserData();
+                console.log(`[clip] loadUserData (${event}) done in ${(performance.now() - t).toFixed(0)}ms`);
                 handleRoute();
             }
         } else if (event === 'SIGNED_OUT') {
@@ -105,14 +108,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function loadUserData() {
         if (!currentUser) return;
-        
+
         // メアドから適当な名前を生成して表示
         const emailPrefix = currentUser.email.split('@')[0];
         profileName.textContent = emailPrefix;
         profileId.textContent = `@${emailPrefix}`;
-        
+
         // ユーザーのマイリスト一覧を取得
+        const t = performance.now();
         await fetchUserLists();
+        console.log(`[clip] fetchUserLists done in ${(performance.now() - t).toFixed(0)}ms`);
     }
 
     // === Routing Logic ===
@@ -216,11 +221,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             // サインイン（ログイン）を試みる
-            console.log('ログイン試行中:', email);
+            console.log('[clip] login: signInWithPassword start', email);
+            const t0 = performance.now();
             let { data, error } = await supabaseClient.auth.signInWithPassword({
                 email: email,
                 password: password,
             });
+            console.log(`[clip] login: signInWithPassword done in ${(performance.now() - t0).toFixed(0)}ms; error=`, error?.message);
 
             if (error) {
                 console.error('ログイン失敗:', error.message);
@@ -228,17 +235,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (error.message.includes('Invalid login credentials')) {
                     const confirmRegister = confirm('アカウントが見つかりません。この内容で新規登録しますか？');
                     if (confirmRegister) {
-                        console.log('新規登録試行中...');
+                        console.log('[clip] login: signUp start');
+                        const t1 = performance.now();
                         const { data: regData, error: regError } = await supabaseClient.auth.signUp({
                             email: email,
                             password: password,
                         });
-                        
+                        console.log(`[clip] login: signUp done in ${(performance.now() - t1).toFixed(0)}ms`);
+
                         if (regError) {
                             console.error('新規登録失敗:', regError.message);
                             throw regError;
                         }
-                        
+
                         if (regData.user && regData.session === null) {
                             alert('登録の案内を送信しました。メールを確認するか、Supabaseの設定で「Confirm Email」をオフにしてください。');
                         } else {
@@ -252,8 +261,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            console.log('ログイン成功:', data.user);
-            // 成功時の遷移
+            console.log('[clip] login: success, navigating');
+            // 成功時の遷移（onAuthStateChange の SIGNED_IN ハンドラと並走するので、
+            // currentUser がここでまだ未設定でも問題なし）
             const pendingAction = sessionStorage.getItem('pending_add_url');
             if (pendingAction) {
                 sessionStorage.removeItem('pending_add_url');
