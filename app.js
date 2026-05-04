@@ -2,8 +2,10 @@
 console.log('[clip] app.js loaded; window.supabase=', typeof window.supabase);
 
 // === Supabase Configuration ===
-const SUPABASE_URL = 'https://izpqclmzyiommzyovcuu.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_2srAPKaBOxzUZjtL92Nnug_Rp1ERO5s';
+// Machica Collection と同じ Supabase プロジェクトを共有する。
+// `lists` / `collected_cards` テーブルは Collection 側にも作成済み。
+const SUPABASE_URL = 'https://tzkzsucrgifrxnbxwdlq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_QT0rigwD5DuxH2SmLBaYVg_fq23Q1im';
 
 // Supabaseクライアントの初期化 (CDN版)
 let supabaseClient;
