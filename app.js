@@ -56,10 +56,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // === Authentication Logic ===
     
     // セッションの確認（ページ読み込み時）
+    // supabase-js v2 の getSession() がトークンリフレッシュで稀にハングするため
+    // Promise.race でタイムアウトをかけ、最悪でもログイン画面までは到達させる。
     async function checkSession() {
         console.log('[clip] checkSession: start');
         try {
-            const { data, error } = await supabaseClient.auth.getSession();
+            const sessionPromise = supabaseClient.auth.getSession();
+            const timeout = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('getSession timeout (5s)')), 5000)
+            );
+            const result = await Promise.race([sessionPromise, timeout]);
+            const { data, error } = result || {};
             if (error) console.error('[clip] getSession error:', error);
             console.log('[clip] checkSession: hasSession=', !!data?.session);
             if (data && data.session) {
