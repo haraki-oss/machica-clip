@@ -83,65 +83,97 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentCardData = null; // URLから取得した追加予定のカード情報
     
     // === Authentication Logic ===
-    
-    // セッションの確認（ページ読み込み時）
-    // supabase-js v2 の getSession() がトークンリフレッシュで稀にハングするため
-    // Promise.race でタイムアウトをかけ、最悪でもログイン画面までは到達させる。
-    async function checkSession() {
-        console.log('[clip] checkSession: start');
+
+    // localStorage に保存された Supabase セッションを同期的に読む。
+    // supabase-js v2 の getSession() / INITIAL_SESSION は環境によっては
+    // 8〜10 秒ハングするので、ルーティング判断に使うのは避ける。
+    function readStoredSession() {
         try {
-            const sessionPromise = supabaseClient.auth.getSession();
-            const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('getSession timeout (5s)')), 5000)
-            );
-            const result = await Promise.race([sessionPromise, timeout]);
-            const { data, error } = result || {};
-            if (error) console.error('[clip] getSession error:', error);
-            console.log('[clip] checkSession: hasSession=', !!data?.session);
-            if (data && data.session) {
-                currentUser = data.session.user;
-                try {
-                    await loadUserData();
-                } catch (e) {
-                    console.error('[clip] loadUserData failed:', e);
-                }
-            } else {
-                currentUser = null;
+            const ref = (SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/) || [])[1];
+            if (!ref) return null;
+            // supabase-js v2 のキー名は `sb-<ref>-auth-token`
+            const key = `sb-${ref}-auth-token`;
+            const raw = localStorage.getItem(key);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            // 期限が切れていれば無効扱い
+            if (parsed && parsed.user && (!parsed.expires_at || parsed.expires_at * 1000 > Date.now())) {
+                return parsed;
             }
-        } catch (e) {
-            console.error('[clip] checkSession failed:', e);
+        } catch (_) {}
+        return null;
+    }
+
+    // データロード完了済みかのフラグ（INITIAL_SESSION ハングを跨いでも 1 回だけ走らせる）
+    let _dataLoadStarted = false;
+
+    function ensureDataLoaded(reason) {
+        if (_dataLoadStarted || !currentUser) return;
+        _dataLoadStarted = true;
+        const t = performance.now();
+        loadUserData()
+            .then(() => console.log(`[clip] loadUserData (${reason}) done in ${(performance.now() - t).toFixed(0)}ms`))
+            .catch((e) => {
+                console.error(`[clip] loadUserData (${reason}) failed:`, e);
+                _dataLoadStarted = false; // 次のチャンスで再試行できるようにする
+            })
+            .finally(() => handleRoute());
+    }
+
+    // セッションの確認（ページ読み込み時）— localStorage 直読みで即決し、
+    // データ取得はバックグラウンドで進める。
+    function checkSession() {
+        const stored = readStoredSession();
+        if (stored && stored.user) {
+            console.log('[clip] checkSession: stored session found, user=', stored.user.email);
+            currentUser = stored.user;
+            ensureDataLoaded('stored');
+        } else {
+            console.log('[clip] checkSession: no stored session');
             currentUser = null;
         }
-        console.log('[clip] checkSession: calling handleRoute');
         handleRoute();
     }
 
-    // Auth状態の変更を監視
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    // Auth状態の変更を監視（INITIAL_SESSION は SDK 準備完了の合図として活用）
+    supabaseClient.auth.onAuthStateChange((event, session) => {
         console.log(`[clip] onAuthStateChange: ${event}, hasSession=${!!session}`);
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (event === 'INITIAL_SESSION') {
             if (session) {
                 currentUser = session.user;
-                const t = performance.now();
-                await loadUserData();
-                console.log(`[clip] loadUserData (${event}) done in ${(performance.now() - t).toFixed(0)}ms`);
+                // INITIAL_SESSION 到着 = ここからクエリがハングなしで通る。
+                // localStorage 読み時のロードがタイムアウトしていてもここで取り直す。
+                _dataLoadStarted = false;
+                ensureDataLoaded('INITIAL_SESSION');
+            } else if (currentUser) {
+                // localStorage には残骸があったが SDK 側はセッション無し → 整合化
+                currentUser = null;
+                _dataLoadStarted = false;
                 handleRoute();
             }
+        } else if (event === 'SIGNED_IN' && session) {
+            const userChanged = !currentUser || currentUser.id !== session.user.id;
+            currentUser = session.user;
+            if (userChanged) _dataLoadStarted = false;
+            ensureDataLoaded('SIGNED_IN');
         } else if (event === 'SIGNED_OUT') {
             currentUser = null;
+            _dataLoadStarted = false;
             handleRoute();
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+            currentUser = session.user;
         }
     });
 
     async function loadUserData() {
         if (!currentUser) return;
 
-        // メアドから適当な名前を生成して表示
+        // メアドから適当な名前を生成して表示（即時反映）
         const emailPrefix = currentUser.email.split('@')[0];
         profileName.textContent = emailPrefix;
         profileId.textContent = `@${emailPrefix}`;
 
-        // ユーザーのマイリスト一覧を取得
+        // ユーザーのマイリスト一覧を取得（タイムアウト時は内部で警告だけ出して続行）
         const t = performance.now();
         await fetchUserLists();
         console.log(`[clip] fetchUserLists done in ${(performance.now() - t).toFixed(0)}ms`);
@@ -342,14 +374,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!currentUser) return Promise.resolve();
         if (_listsFetchInFlight) return _listsFetchInFlight;
         _listsFetchInFlight = (async () => {
-            // ハング対策の race
+            // ハング対策の race。短めのタイムアウトで諦め、
+            // INITIAL_SESSION などで再呼び出しされたら取り直す。
             const queryP = supabaseClient
                 .from('lists')
                 .select('*')
                 .eq('user_id', currentUser.id)
                 .order('created_at', { ascending: false });
             const timeoutP = new Promise((resolve) =>
-                setTimeout(() => resolve({ data: null, error: { message: 'lists query timeout' } }), 8000)
+                setTimeout(() => resolve({ data: null, error: { message: 'lists query timeout' } }), 4000)
             );
             const { data, error } = await Promise.race([queryP, timeoutP]);
 
