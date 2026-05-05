@@ -4,3 +4,6 @@ Thumbs.db
 .idea/
 node_modules/
 .vercel
+
+# アバター分割の元画像（リポジトリには含めない）
+assets-source/

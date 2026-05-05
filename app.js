@@ -176,12 +176,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log(`[clip] fetchUserLists done in ${(performance.now() - t).toFixed(0)}ms`);
     }
 
-    // 絵文字アバター候補（5種）— 表示は素朴に絵文字一文字
-    const AVATAR_OPTIONS = ['🐱', '🐰', '🦊', '🐻', '🐼'];
+    // 画像アバター候補（20種）— assets/avatars/<id>.png に対応
+    // データは user_metadata.avatar_emoji（旧名）に保存。旧絵文字値は黙って既定にフォールバック。
+    const AVATAR_OPTIONS = Array.from({ length: 20 }, (_, i) =>
+        'avatar-' + String(i + 1).padStart(2, '0')
+    );
     const DEFAULT_AVATAR = AVATAR_OPTIONS[0];
 
+    function avatarImgHtml(id) {
+        return `<img src="assets/avatars/${id}.png" alt="" class="w-full h-full object-cover" draggable="false">`;
+    }
+
     // 表示名は user_metadata.display_name、ハンドルはメアド前置詞固定（編集不可）
-    // アバターは user_metadata.avatar_emoji（許可リストに無いものは無視）
     function renderProfile() {
         if (!currentUser) return;
         const meta = currentUser.user_metadata || {};
@@ -191,10 +197,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         profileName.textContent = name;
         profileId.textContent = `@${emailPrefix}`;
 
+        const html = avatarImgHtml(avatar);
         const avatarEl = document.getElementById('profile-avatar');
-        if (avatarEl) avatarEl.textContent = avatar;
+        if (avatarEl) avatarEl.innerHTML = html;
         const navAvatar = document.getElementById('nav-avatar');
-        if (navAvatar) navAvatar.textContent = avatar;
+        if (navAvatar) navAvatar.innerHTML = html;
     }
 
     // === Routing Logic ===
@@ -1164,15 +1171,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderAvatarPicker(selected) {
         if (!profileEditAvatarsWrap) return;
-        profileEditAvatarsWrap.innerHTML = AVATAR_OPTIONS.map(em => {
-            const isSel = em === selected;
-            const cls = `avatar-option text-2xl w-12 h-12 rounded-full flex items-center justify-center transition-all `
-                + (isSel ? 'bg-ciel-50 ring-2 ring-ciel-400 scale-110' : 'bg-gray-50 hover:bg-ciel-50/60');
-            return `<button type="button" class="${cls}" data-emoji="${em}" aria-pressed="${isSel}">${em}</button>`;
+        profileEditAvatarsWrap.innerHTML = AVATAR_OPTIONS.map(id => {
+            const isSel = id === selected;
+            const cls = `avatar-option w-12 h-12 rounded-full overflow-hidden transition-all `
+                + (isSel ? 'ring-2 ring-ciel-400 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100');
+            return `<button type="button" class="${cls}" data-avatar="${id}" aria-pressed="${isSel}">${avatarImgHtml(id)}</button>`;
         }).join('');
         profileEditAvatarsWrap.querySelectorAll('button.avatar-option').forEach(btn => {
             btn.addEventListener('click', () => {
-                _editAvatarSelected = btn.dataset.emoji;
+                _editAvatarSelected = btn.dataset.avatar;
                 renderAvatarPicker(_editAvatarSelected);
             });
         });
