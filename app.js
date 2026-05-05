@@ -176,15 +176,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log(`[clip] fetchUserLists done in ${(performance.now() - t).toFixed(0)}ms`);
     }
 
-    // user_metadata に保存したカスタム表示名/ハンドルを優先、なければメアド前置詞にフォールバック
+    // 絵文字アバター候補（5種）— 表示は素朴に絵文字一文字
+    const AVATAR_OPTIONS = ['🐱', '🐰', '🦊', '🐻', '🐼'];
+    const DEFAULT_AVATAR = AVATAR_OPTIONS[0];
+
+    // 表示名は user_metadata.display_name、ハンドルはメアド前置詞固定（編集不可）
+    // アバターは user_metadata.avatar_emoji（許可リストに無いものは無視）
     function renderProfile() {
         if (!currentUser) return;
         const meta = currentUser.user_metadata || {};
         const emailPrefix = (currentUser.email || '').split('@')[0] || 'user';
         const name = (meta.display_name && String(meta.display_name).trim()) || emailPrefix;
-        const handle = (meta.handle && String(meta.handle).trim()) || emailPrefix;
+        const avatar = AVATAR_OPTIONS.includes(meta.avatar_emoji) ? meta.avatar_emoji : DEFAULT_AVATAR;
         profileName.textContent = name;
-        profileId.textContent = `@${handle}`;
+        profileId.textContent = `@${emailPrefix}`;
+
+        const avatarEl = document.getElementById('profile-avatar');
+        if (avatarEl) avatarEl.textContent = avatar;
+        const navAvatar = document.getElementById('nav-avatar');
+        if (navAvatar) navAvatar.textContent = avatar;
     }
 
     // === Routing Logic ===
@@ -1144,21 +1154,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ============================================================
-    //  プロフィール編集（表示名 / ハンドル）
+    //  プロフィール編集（表示名 + アバター絵文字）
+    //  ハンドル名はメアド前置詞固定で編集不可
     // ============================================================
     const profileEditModal = document.getElementById('profile-edit-modal');
     const profileEditNameInput = document.getElementById('profile-edit-name');
-    const profileEditHandleInput = document.getElementById('profile-edit-handle');
+    const profileEditAvatarsWrap = document.getElementById('profile-edit-avatars');
     const profileEditBtn = document.getElementById('profile-edit-btn');
     const profileEditCancel = document.getElementById('profile-edit-cancel');
     const profileEditSave = document.getElementById('profile-edit-save');
+
+    let _editAvatarSelected = DEFAULT_AVATAR;
+
+    function renderAvatarPicker(selected) {
+        if (!profileEditAvatarsWrap) return;
+        profileEditAvatarsWrap.innerHTML = AVATAR_OPTIONS.map(em => {
+            const isSel = em === selected;
+            const cls = `avatar-option text-2xl w-12 h-12 rounded-full flex items-center justify-center transition-all `
+                + (isSel ? 'bg-ciel-50 ring-2 ring-ciel-400 scale-110' : 'bg-gray-50 hover:bg-ciel-50/60');
+            return `<button type="button" class="${cls}" data-emoji="${em}" aria-pressed="${isSel}">${em}</button>`;
+        }).join('');
+        profileEditAvatarsWrap.querySelectorAll('button.avatar-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                _editAvatarSelected = btn.dataset.emoji;
+                renderAvatarPicker(_editAvatarSelected);
+            });
+        });
+    }
 
     function openProfileEdit() {
         if (!currentUser) return;
         const meta = currentUser.user_metadata || {};
         const emailPrefix = (currentUser.email || '').split('@')[0] || '';
         profileEditNameInput.value = (meta.display_name || emailPrefix || '').trim();
-        profileEditHandleInput.value = (meta.handle || emailPrefix || '').trim();
+        _editAvatarSelected = AVATAR_OPTIONS.includes(meta.avatar_emoji) ? meta.avatar_emoji : DEFAULT_AVATAR;
+        renderAvatarPicker(_editAvatarSelected);
         profileEditModal.classList.remove('hidden');
         profileEditModal.classList.add('flex');
         setTimeout(() => profileEditNameInput.focus(), 30);
@@ -1177,18 +1207,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     profileEditSave?.addEventListener('click', async () => {
         const name = profileEditNameInput.value.trim();
-        const handleRaw = profileEditHandleInput.value.trim();
         if (!name) { alert('表示名は空にできません。'); return; }
-        const handlePattern = /^[A-Za-z0-9_.\-]+$/;
-        if (handleRaw && !handlePattern.test(handleRaw)) {
-            alert('ハンドル名は英数字・アンダースコア・ピリオド・ハイフンのみ使えます。');
-            return;
-        }
+        const avatar = AVATAR_OPTIONS.includes(_editAvatarSelected) ? _editAvatarSelected : DEFAULT_AVATAR;
+
         profileEditSave.disabled = true;
         profileEditSave.textContent = '保存中...';
         try {
             const updP = supabaseClient.auth.updateUser({
-                data: { display_name: name, handle: handleRaw || null }
+                data: { display_name: name, avatar_emoji: avatar }
             });
             const timeoutP = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('updateUser timeout')), 6000)

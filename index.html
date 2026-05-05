@@ -58,8 +58,8 @@
                 </a>
                 <button id="nav-login-btn" class="text-sm font-medium text-gray-500 hover:text-ciel-500 hidden">ログイン</button>
                 <div id="nav-user-menu" class="hidden flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm overflow-hidden" id="nav-avatar">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                    <span class="w-8 h-8 rounded-full bg-ciel-50 flex items-center justify-center text-base overflow-hidden cursor-pointer" id="nav-avatar" title="ログアウト">
+                        <!-- JS が絵文字を差し込む -->
                     </span>
                 </div>
             </nav>
@@ -86,8 +86,8 @@
         <section id="view-mypage" class="view-section hidden">
             <!-- Profile Section -->
             <div class="bg-white rounded-3xl p-5 mb-6 shadow-sm flex items-center gap-4">
-                <div class="w-16 h-16 rounded-full bg-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="text-gray-400 w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                <div id="profile-avatar" class="w-16 h-16 rounded-full bg-ciel-50 flex-shrink-0 flex items-center justify-center overflow-hidden text-3xl">
+                    <!-- JS が絵文字 or デフォルト SVG を差し込む -->
                 </div>
                 <div class="flex-grow">
                     <h2 class="text-lg font-bold text-gray-800" id="profile-name">No Name</h2>
@@ -240,20 +240,17 @@
     <div id="profile-edit-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 px-4">
         <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-xl">
             <h3 class="text-lg font-bold text-gray-800 mb-4">プロフィールの編集</h3>
-            <div class="space-y-4">
+            <div class="space-y-5">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1">表示名</label>
                     <input type="text" id="profile-edit-name" maxlength="40" placeholder="例：たろう"
                         class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ciel-300 bg-gray-50">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 mb-1">ハンドル名</label>
-                    <div class="flex items-center gap-1">
-                        <span class="text-gray-400 text-sm">@</span>
-                        <input type="text" id="profile-edit-handle" maxlength="30" placeholder="user_clip" pattern="[A-Za-z0-9_.\-]+"
-                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ciel-300 bg-gray-50">
+                    <p class="block text-xs font-bold text-gray-500 mb-2">アイコン</p>
+                    <div id="profile-edit-avatars" class="flex justify-between gap-2">
+                        <!-- JS でレンダリング -->
                     </div>
-                    <p class="text-[10px] text-gray-400 mt-1">英数字・アンダースコア・ピリオド・ハイフンのみ</p>
                 </div>
             </div>
             <div class="flex gap-3 mt-6">
