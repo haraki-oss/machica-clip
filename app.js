@@ -545,30 +545,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     // リスト作成ボタン
     document.getElementById('create-list-btn').addEventListener('click', async () => {
         const name = prompt('新しいリストの名前を入力してください');
-        if (name && name.trim() !== '') {
-            // 末尾に追加されるよう、現状の最大 sort_order +1 を採番
-            let nextOrder = Date.now() / 1000;
-            try {
-                const { data: maxRow } = await supabaseClient
-                    .from('lists')
-                    .select('sort_order')
-                    .eq('user_id', currentUser.id)
-                    .order('sort_order', { ascending: false, nullsFirst: false })
-                    .limit(1)
-                    .maybeSingle();
-                if (maxRow && typeof maxRow.sort_order === 'number') nextOrder = maxRow.sort_order + 1;
-            } catch (_) { /* fallback to timestamp */ }
+        if (!name || name.trim() === '') return;
 
-            const { error } = await supabaseClient
-                .from('lists')
-                .insert([{ user_id: currentUser.id, name: name.trim(), sort_order: nextOrder }]);
+        // sort_order は単に現在時刻（秒）。ドラッグ並び替え後は 1..N の小さい整数になるので、
+        // 巨大な timestamp 値は確実に末尾に並ぶ。
+        const nextOrder = Date.now() / 1000;
+        const payload = { user_id: currentUser.id, name: name.trim(), sort_order: nextOrder };
+        console.log('[clip] create list:', payload);
 
-            if (error) {
-                alert('リストの作成に失敗しました');
-            } else {
-                fetchUserLists();
-            }
+        const { data, error } = await supabaseClient
+            .from('lists')
+            .insert([payload])
+            .select();
+
+        if (error) {
+            console.error('[clip] create list failed:', error);
+            alert('リストの作成に失敗しました: ' + (error.message || JSON.stringify(error)));
+            return;
         }
+        console.log('[clip] create list success:', data);
+        await fetchUserLists();
     });
 
     // Add Card View
