@@ -44,9 +44,15 @@
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-50">
-        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center gap-3">
             <h1 class="text-2xl font-afacad font-bold text-ciel-500 cursor-pointer" id="logo-btn">machica clip</h1>
-            <nav>
+            <nav class="flex items-center gap-3">
+                <a href="https://machica-collection.vercel.app/" id="nav-back-collection"
+                   class="text-xs font-medium text-gray-500 hover:text-ciel-500 transition-colors flex items-center gap-1 whitespace-nowrap"
+                   aria-label="machica collection に戻る">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
+                    <span>collection</span>
+                </a>
                 <button id="nav-login-btn" class="text-sm font-medium text-gray-500 hover:text-ciel-500 hidden">ログイン</button>
                 <div id="nav-user-menu" class="hidden flex items-center gap-2">
                     <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm overflow-hidden" id="nav-avatar">
