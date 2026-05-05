@@ -11,11 +11,34 @@ console.log('[clip] app.js loaded; window.supabase=', typeof window.supabase);
 const SUPABASE_URL = 'https://tzkzsucrgifrxnbxwdlq.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6a3pzdWNyZ2lmcnhuYnh3ZGxxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMzgwMTYsImV4cCI6MjA5MjkxNDAxNn0.M0Ks6T8UEdulBZu-mmzGY6LtSHrGdgqvTRP1Z_DUnKQ';
 
+// 古い Supabase プロジェクトの auth-token が残っていると
+// supabase-js が永遠に refresh をかけ続けてクエリがハングするので
+// 起動時に他プロジェクトの token は削除しておく。
+try {
+    const expectedRef = (SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/) || [])[1];
+    Object.keys(localStorage).forEach(k => {
+        if (/^sb-[a-z0-9]+-auth-token/.test(k) && expectedRef && !k.includes(expectedRef)) {
+            try { localStorage.removeItem(k); console.log('[clip] cleaned stale auth key:', k); } catch (_) {}
+        }
+    });
+} catch (e) { console.warn('[clip] localStorage scan failed:', e); }
+
 // Supabaseクライアントの初期化 (CDN版)
+// realtime のデフォルト websocket と auth の auto-refresh がハングを誘発するので
+// 本アプリでは両方無効化。SPA 内で短時間しか使わないため refresh しなくてもよい。
 let supabaseClient;
 try {
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log('[clip] supabase client initialized');
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+        },
+        realtime: {
+            params: { eventsPerSecond: 1 },
+        },
+    });
+    console.log('[clip] supabase client initialized (autoRefresh=false)');
 } catch (e) {
     console.error('[clip] supabase init failed:', e);
 }
@@ -492,8 +515,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         addConfirmBtn.textContent = '保存中...';
 
         try {
-            // Supabaseにデータを保存
-            const { error } = await supabaseClient
+            // Supabaseにデータを保存（ハング対策で 8s タイムアウトを race）
+            console.log('[clip] save: insert start');
+            const t0 = performance.now();
+            const insertP = supabaseClient
                 .from('collected_cards')
                 .insert([{
                     user_id: currentUser.id,
@@ -502,6 +527,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     title: currentCardData.title,
                     image_url: currentCardData.image || null
                 }]);
+            const timeoutP = new Promise((resolve) =>
+                setTimeout(() => resolve({ error: { message: 'insert timeout' } }), 8000)
+            );
+            const { error } = await Promise.race([insertP, timeoutP]);
+            console.log(`[clip] save: insert race resolved in ${(performance.now() - t0).toFixed(0)}ms; error=`, error?.message);
 
             if (error) throw error;
 
