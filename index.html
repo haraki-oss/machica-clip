@@ -12,7 +12,10 @@
     
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
+
+    <!-- SortableJS (touch + mouse 対応のドラッグ並び替え) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
     <!-- Tailwind CSS (Play CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -90,7 +93,7 @@
                     <h2 class="text-lg font-bold text-gray-800" id="profile-name">No Name</h2>
                     <p class="text-sm text-gray-400" id="profile-id">@user_clip</p>
                 </div>
-                <button class="text-ciel-400 p-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg></button>
+                <button id="profile-edit-btn" class="text-ciel-400 hover:text-ciel-500 p-2 transition-colors" aria-label="プロフィールを編集"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg></button>
             </div>
 
             <!-- Lists Header -->
@@ -232,6 +235,33 @@
         </section>
 
     </main>
+
+    <!-- Profile Edit Modal -->
+    <div id="profile-edit-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 px-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">プロフィールの編集</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">表示名</label>
+                    <input type="text" id="profile-edit-name" maxlength="40" placeholder="例：たろう"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ciel-300 bg-gray-50">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">ハンドル名</label>
+                    <div class="flex items-center gap-1">
+                        <span class="text-gray-400 text-sm">@</span>
+                        <input type="text" id="profile-edit-handle" maxlength="30" placeholder="user_clip" pattern="[A-Za-z0-9_.\-]+"
+                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-ciel-300 bg-gray-50">
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1">英数字・アンダースコア・ピリオド・ハイフンのみ</p>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button id="profile-edit-cancel" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium py-3 rounded-full transition-colors">キャンセル</button>
+                <button id="profile-edit-save" class="flex-1 bg-ciel-400 hover:bg-ciel-500 text-white font-medium py-3 rounded-full transition-colors shadow-sm">保存</button>
+            </div>
+        </div>
+    </div>
 
     <!-- App Logic -->
     <script src="app.js"></script>

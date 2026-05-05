@@ -168,15 +168,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function loadUserData() {
         if (!currentUser) return;
 
-        // メアドから適当な名前を生成して表示（即時反映）
-        const emailPrefix = currentUser.email.split('@')[0];
-        profileName.textContent = emailPrefix;
-        profileId.textContent = `@${emailPrefix}`;
+        renderProfile();
 
         // ユーザーのマイリスト一覧を取得（タイムアウト時は内部で警告だけ出して続行）
         const t = performance.now();
         await fetchUserLists();
         console.log(`[clip] fetchUserLists done in ${(performance.now() - t).toFixed(0)}ms`);
+    }
+
+    // user_metadata に保存したカスタム表示名/ハンドルを優先、なければメアド前置詞にフォールバック
+    function renderProfile() {
+        if (!currentUser) return;
+        const meta = currentUser.user_metadata || {};
+        const emailPrefix = (currentUser.email || '').split('@')[0] || 'user';
+        const name = (meta.display_name && String(meta.display_name).trim()) || emailPrefix;
+        const handle = (meta.handle && String(meta.handle).trim()) || emailPrefix;
+        profileName.textContent = name;
+        profileId.textContent = `@${handle}`;
     }
 
     // === Routing Logic ===
@@ -376,11 +384,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         _listsFetchInFlight = (async () => {
             // ハング対策の race。短めのタイムアウトで諦め、
             // INITIAL_SESSION などで再呼び出しされたら取り直す。
+            // sort_order を優先、未設定や同値は created_at 昇順で安定化。
             const queryP = supabaseClient
                 .from('lists')
                 .select('*')
                 .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false });
+                .order('sort_order', { ascending: true, nullsFirst: false })
+                .order('created_at', { ascending: true });
             const timeoutP = new Promise((resolve) =>
                 setTimeout(() => resolve({ data: null, error: { message: 'lists query timeout' } }), 4000)
             );
@@ -426,7 +436,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const { data, error } = await supabaseClient
             .from('lists')
-            .insert([{ user_id: currentUser.id, name: 'マイコレクション' }])
+            .insert([{ user_id: currentUser.id, name: 'マイコレクション', sort_order: Date.now() / 1000 }])
             .select();
 
         if (!error && data) {
@@ -435,7 +445,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 .from('lists')
                 .select('*')
                 .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false });
+                .order('sort_order', { ascending: true, nullsFirst: false })
+                .order('created_at', { ascending: true });
             if (lists) {
                 renderLists(lists);
                 updateAddCardSelect(lists);
@@ -443,25 +454,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    let _listsSortable = null;
+
     function renderLists(lists) {
         const container = document.getElementById('lists-container');
         container.innerHTML = ''; // Clear
-        
-        if (!lists || lists.length === 0) return;
+
+        if (!lists || lists.length === 0) {
+            if (_listsSortable) { try { _listsSortable.destroy(); } catch (_) {} _listsSortable = null; }
+            return;
+        }
 
         lists.forEach(list => {
             const el = document.createElement('div');
-            el.className = 'bg-white p-4 rounded-3xl shadow-sm aspect-video flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden group';
+            el.className = 'list-tile bg-white p-4 rounded-3xl shadow-sm aspect-video flex flex-col items-center justify-center cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden group';
+            el.dataset.listId = String(list.id);
             el.innerHTML = `
                 <div class="absolute inset-0 bg-ciel-50 opacity-50"></div>
-                <span class="relative font-bold text-gray-700 text-sm mb-1">${list.name}</span>
+                <span class="relative font-bold text-gray-700 text-sm mb-1">${escapeHtml(list.name)}</span>
                 <span class="relative text-xs text-gray-400">アイテムを見る</span>
             `;
-            el.addEventListener('click', () => {
+            el.addEventListener('click', (e) => {
+                // ドラッグ直後の click は Sortable がガードする (preventOnFilter)
+                if (el.classList.contains('sortable-chosen') || el.classList.contains('sortable-drag')) return;
                 window.location.hash = `#list?id=${list.id}`;
             });
             container.appendChild(el);
         });
+
+        initListsSortable(container);
+    }
+
+    function initListsSortable(container) {
+        if (typeof Sortable === 'undefined') return;
+        if (_listsSortable) { try { _listsSortable.destroy(); } catch (_) {} }
+        _listsSortable = Sortable.create(container, {
+            animation: 160,
+            delay: 200,        // 長押し検知（モバイルでスクロールと両立させる）
+            delayOnTouchOnly: true,
+            ghostClass: 'opacity-40',
+            chosenClass: 'sortable-chosen',
+            onEnd: async () => {
+                const orderedIds = [...container.querySelectorAll('[data-list-id]')]
+                    .map(el => el.dataset.listId);
+                await persistListsOrder(orderedIds);
+            },
+        });
+    }
+
+    async function persistListsOrder(orderedIds) {
+        if (!currentUser || !orderedIds || orderedIds.length === 0) return;
+        // sort_order を 1, 2, 3... の整数で再採番
+        const updates = orderedIds.map((id, idx) => ({ id: Number(id), sort_order: idx + 1 }));
+        for (const u of updates) {
+            // upsert は user_id が要るので update を1件ずつ。リスト数は通常少数。
+            try {
+                await supabaseClient
+                    .from('lists')
+                    .update({ sort_order: u.sort_order })
+                    .eq('id', u.id)
+                    .eq('user_id', currentUser.id);
+            } catch (e) {
+                console.error('[clip] persistListsOrder failed for', u.id, e);
+            }
+        }
     }
 
     function updateAddCardSelect(lists) {
@@ -480,10 +536,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('create-list-btn').addEventListener('click', async () => {
         const name = prompt('新しいリストの名前を入力してください');
         if (name && name.trim() !== '') {
+            // 末尾に追加されるよう、現状の最大 sort_order +1 を採番
+            let nextOrder = Date.now() / 1000;
+            try {
+                const { data: maxRow } = await supabaseClient
+                    .from('lists')
+                    .select('sort_order')
+                    .eq('user_id', currentUser.id)
+                    .order('sort_order', { ascending: false, nullsFirst: false })
+                    .limit(1)
+                    .maybeSingle();
+                if (maxRow && typeof maxRow.sort_order === 'number') nextOrder = maxRow.sort_order + 1;
+            } catch (_) { /* fallback to timestamp */ }
+
             const { error } = await supabaseClient
                 .from('lists')
-                .insert([{ user_id: currentUser.id, name: name.trim() }]);
-            
+                .insert([{ user_id: currentUser.id, name: name.trim(), sort_order: nextOrder }]);
+
             if (error) {
                 alert('リストの作成に失敗しました');
             } else {
@@ -548,6 +617,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         addConfirmBtn.textContent = '保存中...';
 
         try {
+            // 重複チェック：同じリスト × 同じ original_card_id が既にあれば中断
+            console.log('[clip] save: dedup check');
+            try {
+                const dupP = supabaseClient
+                    .from('collected_cards')
+                    .select('id')
+                    .eq('user_id', currentUser.id)
+                    .eq('list_id', listId)
+                    .eq('original_card_id', currentCardData.id)
+                    .limit(1);
+                const dupTimeout = new Promise((resolve) =>
+                    setTimeout(() => resolve({ data: null, error: null }), 4000) // 念のため timeout
+                );
+                const { data: dup } = await Promise.race([dupP, dupTimeout]);
+                if (dup && dup.length > 0) {
+                    alert('このカードは既にこのリストに追加されています。');
+                    addConfirmBtn.disabled = false;
+                    addConfirmBtn.textContent = '保存する';
+                    return;
+                }
+            } catch (e) {
+                console.warn('[clip] dedup check skipped:', e);
+            }
+
             // Supabaseにデータを保存（ハング対策で 8s タイムアウトを race）
             console.log('[clip] save: insert start');
             const t0 = performance.now();
@@ -566,7 +659,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { error } = await Promise.race([insertP, timeoutP]);
             console.log(`[clip] save: insert race resolved in ${(performance.now() - t0).toFixed(0)}ms; error=`, error?.message);
 
-            if (error) throw error;
+            if (error) {
+                // UNIQUE 制約違反は分かりやすい文言に変換
+                if (error.code === '23505' || /duplicate|unique/i.test(error.message || '')) {
+                    alert('このカードは既にこのリストに追加されています。');
+                    addConfirmBtn.disabled = false;
+                    addConfirmBtn.textContent = '保存する';
+                    return;
+                }
+                throw error;
+            }
 
             // 成功UI
             addConfirmBtn.textContent = '保存しました！';
@@ -661,7 +763,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <div class="p-3">
                     <h4 class="text-sm font-bold text-gray-700 truncate">${escapeHtml(card.title)}</h4>
-                    <p class="text-[10px] text-gray-400 mt-1">${new Date(card.created_at).toLocaleDateString()}</p>
+                    <p class="text-[10px] text-gray-400 mt-1" title="${new Date(card.created_at).toLocaleString('ja-JP')}">${escapeHtml(formatRelativeDate(card.created_at))}</p>
                 </div>
             `;
             const goDetail = () => { window.location.hash = `#card?id=${card.id}`; };
@@ -684,6 +786,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             .replace(/'/g, '&#39;');
     }
     function escapeAttr(s) { return escapeHtml(s); }
+
+    // ── 相対日時表示（"今日" / "3日前" / "2ヶ月前" など） ─────
+    function formatRelativeDate(dateStr) {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        const diffMs = Date.now() - d.getTime();
+        const minute = 60 * 1000;
+        const hour = 60 * minute;
+        const day = 24 * hour;
+        if (diffMs < 0) return d.toLocaleDateString('ja-JP');
+        if (diffMs < hour) {
+            const mins = Math.max(1, Math.floor(diffMs / minute));
+            return `${mins}分前`;
+        }
+        if (diffMs < day) return `${Math.floor(diffMs / hour)}時間前`;
+        const days = Math.floor(diffMs / day);
+        if (days === 0) return '今日';
+        if (days === 1) return '昨日';
+        if (days < 7) return `${days}日前`;
+        if (days < 30) return `${Math.floor(days / 7)}週間前`;
+        if (days < 365) return `${Math.floor(days / 30)}ヶ月前`;
+        return `${Math.floor(days / 365)}年前`;
+    }
 
     // List Detail Back Button
     document.getElementById('list-detail-back-btn').addEventListener('click', () => {
@@ -848,10 +974,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('card-detail-image').alt = clip.title || '';
         document.getElementById('card-detail-list-name').textContent = clip.lists?.name || 'リスト';
 
-        const created = clip.created_at ? new Date(clip.created_at) : null;
-        document.getElementById('card-detail-clip-date').textContent = created
-            ? `${created.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}にクリップ`
-            : '';
+        const dateEl = document.getElementById('card-detail-clip-date');
+        if (clip.created_at) {
+            const rel = formatRelativeDate(clip.created_at);
+            const abs = new Date(clip.created_at).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
+            dateEl.textContent = `${rel}にクリップ（${abs}）`;
+        } else {
+            dateEl.textContent = '';
+        }
 
         const sourceLink = document.getElementById('card-detail-open-source');
         if (clip.original_card_id) {
@@ -1010,6 +1140,70 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.hash = `#list?id=${targetListId}`;
         } else {
             window.location.hash = '#mypage';
+        }
+    });
+
+    // ============================================================
+    //  プロフィール編集（表示名 / ハンドル）
+    // ============================================================
+    const profileEditModal = document.getElementById('profile-edit-modal');
+    const profileEditNameInput = document.getElementById('profile-edit-name');
+    const profileEditHandleInput = document.getElementById('profile-edit-handle');
+    const profileEditBtn = document.getElementById('profile-edit-btn');
+    const profileEditCancel = document.getElementById('profile-edit-cancel');
+    const profileEditSave = document.getElementById('profile-edit-save');
+
+    function openProfileEdit() {
+        if (!currentUser) return;
+        const meta = currentUser.user_metadata || {};
+        const emailPrefix = (currentUser.email || '').split('@')[0] || '';
+        profileEditNameInput.value = (meta.display_name || emailPrefix || '').trim();
+        profileEditHandleInput.value = (meta.handle || emailPrefix || '').trim();
+        profileEditModal.classList.remove('hidden');
+        profileEditModal.classList.add('flex');
+        setTimeout(() => profileEditNameInput.focus(), 30);
+    }
+
+    function closeProfileEdit() {
+        profileEditModal.classList.add('hidden');
+        profileEditModal.classList.remove('flex');
+    }
+
+    profileEditBtn?.addEventListener('click', openProfileEdit);
+    profileEditCancel?.addEventListener('click', closeProfileEdit);
+    profileEditModal?.addEventListener('click', (e) => {
+        if (e.target === profileEditModal) closeProfileEdit();
+    });
+
+    profileEditSave?.addEventListener('click', async () => {
+        const name = profileEditNameInput.value.trim();
+        const handleRaw = profileEditHandleInput.value.trim();
+        if (!name) { alert('表示名は空にできません。'); return; }
+        const handlePattern = /^[A-Za-z0-9_.\-]+$/;
+        if (handleRaw && !handlePattern.test(handleRaw)) {
+            alert('ハンドル名は英数字・アンダースコア・ピリオド・ハイフンのみ使えます。');
+            return;
+        }
+        profileEditSave.disabled = true;
+        profileEditSave.textContent = '保存中...';
+        try {
+            const updP = supabaseClient.auth.updateUser({
+                data: { display_name: name, handle: handleRaw || null }
+            });
+            const timeoutP = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('updateUser timeout')), 6000)
+            );
+            const { data, error } = await Promise.race([updP, timeoutP]);
+            if (error) throw error;
+            if (data && data.user) currentUser = data.user;
+            renderProfile();
+            closeProfileEdit();
+        } catch (e) {
+            console.error('[clip] profile update failed:', e);
+            alert('プロフィールの更新に失敗しました: ' + (e.message || e));
+        } finally {
+            profileEditSave.disabled = false;
+            profileEditSave.textContent = '保存';
         }
     });
 
